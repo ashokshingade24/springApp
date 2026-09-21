@@ -7,6 +7,91 @@ permissions:
   contents: read
 
 jobs:
+  # ============================================================
+  # 1. SOURCE SECURITY
+  # ============================================================
+
+  source-security:
+    name: Source Security Scans
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+
+      - name: Checkout source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # ------------------------------
+      # Secret scanning
+      # ------------------------------
+
+      - name: Install Gitleaks
+        run: |
+          curl -sSfL \
+            https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Run Gitleaks
+        run: |
+          gitleaks detect \
+            --source . \
+            --redact \
+            --exit-code 1
+      # ------------------------------
+      # SAST
+      # ------------------------------
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+  # ============================================================
+  # 2. DEPENDENCY SECURITY
+  # ============================================================
+
+  dependency-security:
+    name: Dependency Security
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        service: [user-service, order-service]
+
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Dependency tree
+        working-directory: ${{ matrix.service }}
+        run: |
+          mvn dependency:tree
+
+      - name: OWASP Dependency Check
+        working-directory: ${{ matrix.service }}
+        run: |
+          mvn org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=7
   test:
     runs-on: ubuntu-24.04
     strategy:
